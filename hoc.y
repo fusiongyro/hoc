@@ -1,26 +1,45 @@
-%{
+%{  
 #include <stdio.h>
+#include <signal.h>
+#include <setjmp.h>
 #include <ctype.h>       
 
-#define YYSTYPE double  /* data type of yacc stack */
-
 int yyerror(const char *s);
-int yylex();  
+int yylex();
+int execerror(const char*s, char *t);
 
+double mem[26];
+jmp_buf begin;
+ 
 %}
-%token  NUMBER
-%left '+' '-'
-%left '*' '/'
+%union {
+  double val;
+  int index;
+}
+%token  <val>   NUMBER
+%token  <index> VAR
+%type   <val>   expr
+%right '='
+%left  '+' '-'
+%left  '*' '/'
+%left  UNARYMINUS
 %%
 list:   /* nothing */
        | list '\n'
        | list expr '\n'      { printf("\t%.8g\n", $2); }
+       | list error '\n'     { yyerrok; }
        ;
- expr:  NUMBER                { $$ = $1; }
+ expr:  NUMBER                
+   | VAR                      { $$ = mem[$1]; }
+   | VAR '=' expr             { $$ = mem[$1] = $3; }
+   | '-' expr %prec UNARYMINUS { $$ = -$2; }
    | expr '+' expr            { $$ = $1 + $3; }
    | expr '-' expr            { $$ = $1 - $3; }
    | expr '*' expr            { $$ = $1 * $3; }
-   | expr '/' expr            { $$ = $1 / $3; }
+   | expr '/' expr            {
+     if ($3 == 0.0)
+       execerror("division by zero", "");
+     $$ = $1 / $3; }
    | '(' expr ')'             { $$ = $2; }
    ;
 %%
@@ -41,8 +60,13 @@ int yylex()
 
   if (c == '.' || isdigit(c)) { /* number */
     ungetc(c, stdin);
-    scanf("%lf", &yylval);
+    scanf("%lf", &yylval.val);
     return NUMBER;
+  }
+
+  if (islower(c)) {
+    yylval.index = c - 'a';
+    return VAR;
   }
 
   if (c == '\n')
@@ -64,8 +88,22 @@ int yyerror(const char *s)
   warning(s, (char*)0);
 }
 
+int execerror(const char*s, char *t)
+{
+  warning(s, t);
+  longjmp(begin, 0);
+}
+
+void fpecatch(int i)
+{
+  execerror("floating point exception", (char*)0);
+}
+
+
 int main(int argc, char* argv[])
 {
   progname = argv[0];
+  setjmp(begin);
+  signal(SIGFPE, fpecatch);
   yyparse();
 }
