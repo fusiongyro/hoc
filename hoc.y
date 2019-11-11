@@ -1,10 +1,14 @@
-%{  
+%{
+#include "hoc.h"
 #include <stdio.h>
 #include <signal.h>
 #include <setjmp.h>
 #include <ctype.h>       
 
-int yyerror(const char *s);
+extern double Pow(double x, double y);
+extern void init();
+
+void yyerror(const char *s);
 int yylex();
 int execerror(const char*s, char *t);
 
@@ -14,24 +18,31 @@ jmp_buf begin;
 %}
 %union {
   double val;
-  int index;
+  Symbol *sym;
 }
 %token  <val>   NUMBER
-%token  <index> VAR
-%type   <val>   expr
+%token  <sym>   VAR BLTIN UNDEF
+%type   <val>   expr asgn
 %right '='
 %left  '+' '-'
 %left  '*' '/'
 %left  UNARYMINUS
+%right '^'
 %%
 list:   /* nothing */
        | list '\n'
+       | list asgn '\n'
        | list expr '\n'      { printf("\t%.8g\n", $2); }
        | list error '\n'     { yyerrok; }
        ;
- expr:  NUMBER                
-   | VAR                      { $$ = mem[$1]; }
-   | VAR '=' expr             { $$ = mem[$1] = $3; }
+asgn:    VAR '=' expr { $$ = $1->u.val=$3; $1->type = VAR; }
+   ;
+expr:  NUMBER                
+   | VAR { if ($1->type == UNDEF)
+          execerror("undefined variable", $1->name);
+        $$ = $1->u.val; }
+   | asgn
+   | BLTIN '(' expr ')' { $$ = (*($1->u.ptr))($3); }
    | '-' expr %prec UNARYMINUS { $$ = -$2; }
    | expr '+' expr            { $$ = $1 + $3; }
    | expr '-' expr            { $$ = $1 - $3; }
@@ -40,6 +51,7 @@ list:   /* nothing */
      if ($3 == 0.0)
        execerror("division by zero", "");
      $$ = $1 / $3; }
+   | expr '^' expr { $$ = Pow($1, $3); }
    | '(' expr ')'             { $$ = $2; }
    ;
 %%
@@ -64,9 +76,18 @@ int yylex()
     return NUMBER;
   }
 
-  if (islower(c)) {
-    yylval.index = c - 'a';
-    return VAR;
+  if (isalpha(c)) {
+    Symbol *s;
+    char sbuf[100], *p = sbuf;
+    do {
+      *p++ = c;
+    } while ((c = getchar()) != EOF && isalnum(c));
+    ungetc(c, stdin);
+    *p = '\0';
+    if ((s = lookup(sbuf)) == 0)
+      s = install(sbuf, UNDEF, 0.0);
+    yylval.sym = s;
+    return s->type == UNDEF ? VAR : s->type;
   }
 
   if (c == '\n')
@@ -83,7 +104,7 @@ void warning(const char *s, char *t)
   fprintf(stderr, " near line %d\n", lineno);
 }
 
-int yyerror(const char *s)
+void yyerror(const char *s)
 {
   warning(s, (char*)0);
 }
@@ -103,6 +124,7 @@ void fpecatch(int i)
 int main(int argc, char* argv[])
 {
   progname = argv[0];
+  init();
   setjmp(begin);
   signal(SIGFPE, fpecatch);
   yyparse();
