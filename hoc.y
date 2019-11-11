@@ -60,42 +60,6 @@ expr:  NUMBER
 char *progname;
 int lineno = 1;
 
-int yylex()
-{
-  int c;
-
-  while ((c = getchar()) == ' ' || c == '\t')
-    ;
-
-  if (c == EOF)
-    return 0;
-
-  if (c == '.' || isdigit(c)) { /* number */
-    ungetc(c, stdin);
-    scanf("%lf", &yylval.val);
-    return NUMBER;
-  }
-
-  if (isalpha(c)) {
-    Symbol *s;
-    char sbuf[100], *p = sbuf;
-    do {
-      *p++ = c;
-    } while ((c = getchar()) != EOF && isalnum(c));
-    ungetc(c, stdin);
-    *p = '\0';
-    if ((s = lookup(sbuf)) == 0)
-      s = install(sbuf, UNDEF, 0.0);
-    yylval.sym = s;
-    return s->type == UNDEF ? VAR : s->type;
-  }
-
-  if (c == '\n')
-    lineno++;
-
-  return c;
-}
-
 void warning(const char *s, char *t)
 {
   fprintf(stderr, "%s: %s", progname, s);

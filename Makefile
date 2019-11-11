@@ -1,16 +1,18 @@
 CFLAGS = -Wall
 YFLAGS = -d
-OBJS = hoc.o init.o math.o symbol.o
+OBJS = hoc.o lex.o init.o math.o symbol.o
 
 all: hoc
 
 hoc: $(OBJS)
-	$(CC) -o $@ -lm $^
+	$(CC) -o $@ -lm -lfl $^
 
-init.o symbol.o: hoc.h y.tab.h
+hoc.o: hoc.h
+
+lex.o init.o symbol.o: hoc.h y.tab.h
 
 pr:
 	@pr hoc.y hoc.h init.c math.c symbol.c Makefile
 
 clean:
-	rm -f $(OBJS) y.tab.[ch]
+	rm -f hoc $(OBJS) y.tab.[ch]
