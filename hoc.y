@@ -4,25 +4,29 @@
 #include <signal.h>
 #include <setjmp.h>
 #include <ctype.h>       
+  
+#define code2(c1,c2)     code(c1); code(c2);
+#define code3(c1,c2,c3)  code(c1); code(c2); code(c3);
 
+extern Inst* code(Inst f);
 extern double Pow(double x, double y);
 extern void init();
+extern void initcode();
+extern void execute(Inst p);
 
 void yyerror(const char *s);
 int yylex();
 int execerror(const char*s, char *t);
-
+ 
 double mem[26];
 jmp_buf begin;
  
 %}
 %union {
-  double val;
   Symbol *sym;
+  Inst   *inst;
 }
-%token  <val>   NUMBER
-%token  <sym>   VAR BLTIN UNDEF
-%type   <val>   expr asgn
+%token  <sym>   NUMBER VAR BLTIN UNDEF
 %right '='
 %left  '+' '-'
 %left  '*' '/'
@@ -30,29 +34,24 @@ jmp_buf begin;
 %right '^'
 %%
 list:   /* nothing */
-       | list '\n'
-       | list asgn '\n'
-       | list expr '\n'      { printf("\t%.8g\n", $2); }
-       | list error '\n'     { yyerrok; }
-       ;
-asgn:    VAR '=' expr { $$ = $1->u.val=$3; $1->type = VAR; }
+  | list '\n'
+  | list asgn '\n'      { code2(Pop, STOP); return 1; }
+  | list expr '\n'      { code2(print, STOP); return 1; }
+  | list error '\n'     { yyerrok; }
+  ;
+asgn:    VAR '=' expr { code3(varpush, (Inst)$1, assign); }
    ;
-expr:  NUMBER                
-   | VAR { if ($1->type == UNDEF)
-          execerror("undefined variable", $1->name);
-        $$ = $1->u.val; }
+expr:  NUMBER { code2(constpush, (Inst)$1); }
+   | VAR { code3(varpush, (Inst)$1, eval); }
    | asgn
-   | BLTIN '(' expr ')' { $$ = (*($1->u.ptr))($3); }
-   | '-' expr %prec UNARYMINUS { $$ = -$2; }
-   | expr '+' expr            { $$ = $1 + $3; }
-   | expr '-' expr            { $$ = $1 - $3; }
-   | expr '*' expr            { $$ = $1 * $3; }
-   | expr '/' expr            {
-     if ($3 == 0.0)
-       execerror("division by zero", "");
-     $$ = $1 / $3; }
-   | expr '^' expr { $$ = Pow($1, $3); }
-   | '(' expr ')'             { $$ = $2; }
+   | BLTIN '(' expr ')' { code2(bltin, (Inst)$1->u.ptr); }
+   | '(' expr ')'
+   | expr '+' expr            { code(add); }
+   | expr '-' expr            { code(sub); }
+   | expr '*' expr            { code(mul); }
+   | expr '/' expr            { code(Div); }
+   | expr '^' expr            { code(power); }
+   | '-' expr %prec UNARYMINUS { code(negate); }
    ;
 %%
        /* end of grammar */
@@ -91,5 +90,7 @@ int main(int argc, char* argv[])
   init();
   setjmp(begin);
   signal(SIGFPE, fpecatch);
-  yyparse();
+  for (initcode(); yyparse(); initcode())
+    execute(prog);
+  return 0;
 }
