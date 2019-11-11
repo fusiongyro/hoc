@@ -15,4 +15,4 @@ pr:
 	@pr hoc.y hoc.h init.c math.c symbol.c Makefile
 
 clean:
-	rm -f hoc $(OBJS) y.tab.[ch]
+	rm -f hoc hoc.c $(OBJS) y.tab.[ch]
